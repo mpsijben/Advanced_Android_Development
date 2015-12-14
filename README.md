@@ -1,3 +1,9 @@
+## Android Developer Nanodegree
+[![udacity][1]][2]
+
+[1]: screenshots/nanodegree.png
+[2]: https://www.udacity.com/course/android-developer-nanodegree--nd801
+
 Advanced Android Sample App
 ===================================
 
