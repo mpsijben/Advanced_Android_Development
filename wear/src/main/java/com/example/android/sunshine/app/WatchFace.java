@@ -35,8 +35,18 @@ import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.text.format.Time;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.Wearable;
 
 import java.lang.ref.WeakReference;
 import java.util.TimeZone;
@@ -86,13 +96,22 @@ public class WatchFace extends CanvasWatchFaceService {
         }
     }
 
-    private class Engine extends CanvasWatchFaceService.Engine {
+    private class Engine extends CanvasWatchFaceService.Engine  implements DataApi.DataListener,
+            GoogleApiClient.ConnectionCallbacks,
+            GoogleApiClient.OnConnectionFailedListener {
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
         Paint mTextPaint;
         Paint mSubTextPaint;
         Paint mHighTextPaint;
+
+        private static final String SUNSHINE_WEAR_PATH = "/sunshine_wear";
+        private static final String WEAR_UUID = "uuid";
+        private static final String WEAR_HIGH = "high";
+        private static final String WEAR_LOW = "low";
+        private static final String WEAR_WEATHER_ID = "weatherId";
+
         Paint mLowTextPaint;
         boolean mAmbient;
         Time mTime;
@@ -107,9 +126,14 @@ public class WatchFace extends CanvasWatchFaceService {
 
         float mXOffset;
         float mYOffset;
-
+        String TAG = "ENGINE";
         float mSubYOffset;
         float m3YOffset;
+        private GoogleApiClient mGoogleApiClient;
+
+        String mHighTempeture = "25°";
+        String mLowTempeture = "10°";
+        int IconNr = R.drawable.ic_clear;
 
         /**
          * Whether the display supports fewer bits for each color in ambient mode. When true, we
@@ -143,6 +167,60 @@ public class WatchFace extends CanvasWatchFaceService {
             mHighTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
             mLowTextPaint = createTextPaint(resources.getColor(R.color.digital_light));
             mTime = new Time();
+
+            mGoogleApiClient = new GoogleApiClient.Builder(getBaseContext())
+                    .addApi(Wearable.API)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .build();
+
+
+            mGoogleApiClient.connect();
+        }
+
+
+        @Override
+        public void onConnected(Bundle connectionHint) {
+            Log.d(TAG, "onConnected(): Successfully connected to Google API client");
+            Wearable.DataApi.addListener(mGoogleApiClient, this);
+        }
+
+        @Override
+        public void onConnectionSuspended(int cause) {
+            Log.d(TAG, "onConnectionSuspended(): Connection to Google API client was suspended");
+        }
+
+        @Override
+        public void onConnectionFailed(ConnectionResult result) {
+            Log.e(TAG, "onConnectionFailed(): Failed to connect, with result: " + result);
+        }
+
+
+        @Override
+        public void onDataChanged(DataEventBuffer dataEvents) {
+            Log.e(TAG, "men122");
+            for (DataEvent dataEvent : dataEvents) {
+                if (dataEvent.getType() == DataEvent.TYPE_CHANGED) {
+                    DataMap dataMap = DataMapItem.fromDataItem(dataEvent.getDataItem()).getDataMap();
+                    String path = dataEvent.getDataItem().getUri().getPath();
+                    Log.e(TAG, path);
+                    if (path.equals(SUNSHINE_WEAR_PATH)) {
+                        if (dataMap.containsKey(WEAR_HIGH)) {
+                            mHighTempeture = dataMap.getString(WEAR_HIGH);
+                        }
+                        if (dataMap.containsKey(WEAR_LOW)) {
+                            mLowTempeture = dataMap.getString(WEAR_LOW);
+                        }
+                        if (dataMap.containsKey(WEAR_WEATHER_ID)) {
+                            int weatherId = dataMap.getInt(WEAR_WEATHER_ID);
+                            IconNr = Convert.getIconResourceForWeatherCondition(weatherId);
+                        }
+                    }
+
+
+                    invalidate();
+                }
+            }
         }
 
         @Override
@@ -285,18 +363,18 @@ public class WatchFace extends CanvasWatchFaceService {
             text = GetSubTitle(mTime);
             canvas.drawText(text, getXCenterOffset(mSubTextPaint, bounds, text), mSubYOffset, mSubTextPaint);
 
-            text = "25°";
+            text = mHighTempeture;
             float x = getXCenterOffset(mHighTextPaint, bounds, text);
             canvas.drawText(text, x, m3YOffset, mHighTextPaint);
-            text = "16°";
+            text = mLowTempeture;
             canvas.drawText(text, x + mLowTextPaint.measureText(text) + 10, m3YOffset, mLowTextPaint);
-            Bitmap icon = GetIcon();
+            Bitmap icon = GetIcon(IconNr);
             canvas.drawBitmap(icon, x - (icon.getWidth() ) - 20, m3YOffset - (icon.getHeight() )+ 3, null);
         }
 
-        public Bitmap GetIcon()
+        public Bitmap GetIcon(int nr)
         {
-            Drawable b = getResources().getDrawable(R.drawable.ic_cloudy);
+            Drawable b = getResources().getDrawable(nr);
             Bitmap icon = ((BitmapDrawable) b).getBitmap();
             float scaledWidth = (mHighTextPaint.getTextSize() / icon.getHeight()) * icon.getWidth();
             return Bitmap.createScaledBitmap(icon, (int) scaledWidth, (int) mHighTextPaint.getTextSize(), true);
